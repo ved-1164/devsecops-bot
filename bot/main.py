@@ -48,10 +48,13 @@ def run_pr_scan() -> None:
     )
 
     import json as _json
+
     report = {
         "warnings": result.warning_count,
         "failures": result.failure_count,
-        "high_severity_count": len([f for f in result.bandit_findings if f.severity in ("HIGH", "CRITICAL")]),
+        "high_severity_count": len(
+            [f for f in result.bandit_findings if f.severity in ("HIGH", "CRITICAL")]
+        ),
         "cve_count": len(result.cve_findings),
         "coverage_pct": result.coverage_pct,
         "blocked": result.has_failures,
