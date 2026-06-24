@@ -2,13 +2,12 @@
 # This file intentionally contains issues for the DevSecOps bot to detect.
 # DO NOT use this in production.
 
-import os
-import sys   # noqa: F401  (unused import — bandit/autoflake will catch this)
+import sys  # noqa: F401  (unused import — bandit/autoflake will catch this)
 import subprocess
 import sqlite3
 
 
-PASSWORD = "super_secret_123"      # B105 — hardcoded password
+PASSWORD = "super_secret_123"  # B105 — hardcoded password
 
 
 def get_user(user_id):
@@ -32,9 +31,18 @@ def assert_positive(value):
     return value
 
 
-def long_function_that_violates_line_length_limit(parameter_one, parameter_two, parameter_three):
+def long_function_that_violates_line_length_limit(
+    parameter_one, parameter_two, parameter_three
+):
     # E501 — line too long
-    combined_result = str(parameter_one) + " " + str(parameter_two) + " " + str(parameter_three) + " extra stuff here"
+    combined_result = (
+        str(parameter_one)
+        + " "
+        + str(parameter_two)
+        + " "
+        + str(parameter_three)
+        + " extra stuff here"
+    )
     return combined_result
 
 
@@ -68,8 +76,8 @@ class UserManager:
     def __init__(self):
         self.users = {}
 
-    def add_user(self,name,email):   # E231 missing whitespace after ','
-        self.users[name]=email       # E225 missing whitespace around operator
+    def add_user(self, name, email):  # E231 missing whitespace after ','
+        self.users[name] = email  # E225 missing whitespace around operator
 
-    def get_user(self,name):
+    def get_user(self, name):
         return self.users.get(name)
