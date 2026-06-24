@@ -48,12 +48,40 @@ def _run(cmd: List[str], cwd: str = ".") -> Tuple[int, str, str]:
     return result.returncode, result.stdout, result.stderr
 
 
+def _tool_available(name: str) -> bool:
+    import shutil
+    return shutil.which(name) is not None
+
+
+def _normalize_path(path: str) -> str:
+    """Return path relative to cwd for cleaner PR comment output."""
+    if not path:
+        return path
+    try:
+        rel = os.path.relpath(path)
+        if not rel.startswith(".."):
+            return rel
+    except ValueError:
+        pass
+    return path
+
+
+# ---------------------------------------------------------------------------
+# SAST — bandit
+# ---------------------------------------------------------------------------
+
 def run_bandit(target_path: str) -> List[Finding]:
     findings: List[Finding] = []
-    _, stdout, _ = _run(["bandit", "-r", target_path, "-f", "json", "-q",
-                          "--exclude", ".venv,node_modules,tests"])
+    if not _tool_available("bandit"):
+        return findings
+
+    _, stdout, _ = _run(
+        ["bandit", "-r", target_path, "-f", "json", "-q",
+         "--exclude", ".venv,node_modules,tests"],
+    )
     if not stdout.strip():
         return findings
+
     try:
         data = json.loads(stdout)
         for r in data.get("results", []):
@@ -62,22 +90,31 @@ def run_bandit(target_path: str) -> List[Finding]:
                 rule_id=r.get("test_id", ""),
                 severity=r.get("issue_severity", "LOW").upper(),
                 title=r.get("test_name", ""),
-                file_path=r.get("filename", ""),
+                file_path=_normalize_path(r.get("filename", "")),
                 line=r.get("line_number", 0),
                 message=r.get("issue_text", ""),
             ))
     except (json.JSONDecodeError, KeyError):
         pass
+
     return findings
 
 
+# ---------------------------------------------------------------------------
+# Lint — flake8
+# ---------------------------------------------------------------------------
+
 def run_flake8(target_path: str) -> List[Finding]:
     findings: List[Finding] = []
+    if not _tool_available("flake8"):
+        return findings
+
     _, stdout, _ = _run([
         "flake8", target_path,
         "--format=%(path)s:%(row)d:%(col)d: %(code)s %(text)s",
         "--exclude=.venv,node_modules,__pycache__",
     ])
+
     for line in stdout.strip().splitlines():
         m = re.match(r"^(.+?):(\d+):\d+: ([A-Z]\d+) (.+)$", line)
         if m:
@@ -87,20 +124,41 @@ def run_flake8(target_path: str) -> List[Finding]:
                 rule_id=code,
                 severity="MEDIUM" if code.startswith("E") else "LOW",
                 title=text,
-                file_path=file_path,
+                file_path=_normalize_path(file_path),
                 line=int(lineno),
                 message=f"{code} {text}",
             ))
+
     return findings
 
+
+# ---------------------------------------------------------------------------
+# Quality — pylint (single subprocess call)
+# ---------------------------------------------------------------------------
 
 def run_pylint(target_path: str) -> Tuple[List[Finding], Optional[float]]:
     findings: List[Finding] = []
     score: Optional[float] = None
 
-    _, stdout, _ = _run(["pylint", target_path, "--output-format=json",
-                          "--ignore=.venv,node_modules"])
-    # pylint JSON output ends before the score line; extract JSON array
+    if not _tool_available("pylint"):
+        return findings, score
+
+    # --score=yes appends the score line to stderr in pylint 3.x when using JSON format
+    _, stdout, stderr = _run([
+        "pylint", target_path,
+        "--output-format=json",
+        "--score=yes",
+        "--ignore=.venv,node_modules",
+    ])
+
+    # Extract score from either stream
+    for stream in (stdout, stderr):
+        m = re.search(r"rated at ([\d.]+)/10", stream)
+        if m:
+            score = float(m.group(1))
+            break
+
+    # Parse JSON messages from stdout
     json_match = re.search(r"(\[.*\])", stdout, re.DOTALL)
     if json_match:
         try:
@@ -119,25 +177,29 @@ def run_pylint(target_path: str) -> Tuple[List[Finding], Optional[float]]:
                     rule_id=msg.get("message-id", ""),
                     severity=severity_map.get(msg.get("type", "convention"), "LOW"),
                     title=msg.get("symbol", ""),
-                    file_path=msg.get("path", ""),
+                    file_path=_normalize_path(msg.get("path", "")),
                     line=msg.get("line", 0),
                     message=msg.get("message", ""),
                 ))
         except (json.JSONDecodeError, TypeError):
             pass
 
-    # Run again in text mode to capture the score line
-    _, stdout2, _ = _run(["pylint", target_path, "--output-format=text",
-                           "--score=yes", "--ignore=.venv,node_modules"])
-    m = re.search(r"rated at ([\d.]+)/10", stdout2)
-    if m:
-        score = float(m.group(1))
-
     return findings, score
 
 
+# ---------------------------------------------------------------------------
+# Coverage — pytest-cov (single subprocess call)
+# ---------------------------------------------------------------------------
+
 def run_coverage(target_path: str) -> Optional[float]:
-    _run(["pytest", "--cov=.", "--cov-report=json", "-q", "--tb=no"], cwd=target_path)
+    if not _tool_available("pytest"):
+        return None
+
+    _run(
+        ["pytest", "--cov=.", "--cov-report=json", "--cov-report=term-missing",
+         "-q", "--tb=no"],
+        cwd=target_path,
+    )
 
     cov_file = os.path.join(target_path, "coverage.json")
     if os.path.exists(cov_file):
@@ -150,17 +212,17 @@ def run_coverage(target_path: str) -> Optional[float]:
         except (json.JSONDecodeError, KeyError, OSError):
             pass
 
-    # Fallback: parse pytest-cov text output from second run
-    _, stdout, _ = _run(["pytest", "--cov=.", "--cov-report=term-missing",
-                          "-q", "--tb=no"], cwd=target_path)
-    m = re.search(r"TOTAL\s+\d+\s+\d+\s+([\d.]+)%", stdout)
-    if m:
-        return float(m.group(1))
-
     return None
 
 
+# ---------------------------------------------------------------------------
+# Duplication — jscpd (optional, requires Node.js)
+# ---------------------------------------------------------------------------
+
 def run_jscpd(target_path: str) -> Optional[float]:
+    if not _tool_available("jscpd"):
+        return None
+
     report_dir = os.path.join(target_path, ".jscpd-report")
     os.makedirs(report_dir, exist_ok=True)
 
@@ -187,23 +249,44 @@ def run_jscpd(target_path: str) -> Optional[float]:
     return None
 
 
-def run_safety(target_path: str) -> List[Finding]:
+# ---------------------------------------------------------------------------
+# CVE — pip-audit (primary) with safety fallback
+# ---------------------------------------------------------------------------
+
+def _run_pip_audit(req_file: str) -> List[Finding]:
     findings: List[Finding] = []
-    req_file = os.path.join(target_path, "requirements.txt")
-    if not os.path.exists(req_file):
-        return findings
-
-    _, stdout, _ = _run(["safety", "check", "-r", req_file, "--json", "--output", "json"])
-    if not stdout.strip():
-        # Try without --output flag (older safety)
-        _, stdout, _ = _run(["safety", "check", "-r", req_file, "--json"])
-
+    _, stdout, _ = _run(["pip-audit", "-r", req_file, "-f", "json", "--no-progress"])
     if not stdout.strip():
         return findings
-
     try:
         data = json.loads(stdout)
+        for dep in data.get("dependencies", []):
+            for vuln in dep.get("vulns", []):
+                aliases = vuln.get("aliases", [])
+                cve_id = next(
+                    (a for a in aliases if a.startswith("CVE-")),
+                    vuln.get("id", "UNKNOWN"),
+                )
+                findings.append(Finding(
+                    scanner="pip-audit",
+                    rule_id=cve_id,
+                    severity="HIGH",
+                    title=f"{dep['name']} {dep['version']} has known vulnerability",
+                    file_path="requirements.txt",
+                    message=vuln.get("description", "")[:200],
+                ))
+    except (json.JSONDecodeError, KeyError, TypeError):
+        pass
+    return findings
 
+
+def _run_safety(req_file: str) -> List[Finding]:
+    findings: List[Finding] = []
+    _, stdout, _ = _run(["safety", "check", "-r", req_file, "--json"])
+    if not stdout.strip():
+        return findings
+    try:
+        data = json.loads(stdout)
         # safety 2.x: list of [package, spec, version, advisory, vuln_id]
         if isinstance(data, list):
             for vuln in data:
@@ -216,7 +299,6 @@ def run_safety(target_path: str) -> List[Finding]:
                         file_path="requirements.txt",
                         message=str(vuln[3])[:200],
                     ))
-
         # safety 3.x: {"vulnerabilities": [...]}
         elif isinstance(data, dict):
             for v in data.get("vulnerabilities", []):
@@ -228,12 +310,29 @@ def run_safety(target_path: str) -> List[Finding]:
                     file_path="requirements.txt",
                     message=v.get("advisory", "")[:200],
                 ))
-
     except (json.JSONDecodeError, TypeError):
         pass
-
     return findings
 
+
+def run_safety(target_path: str) -> List[Finding]:
+    """Scan requirements.txt for CVEs using pip-audit (primary) or safety (fallback)."""
+    req_file = os.path.join(target_path, "requirements.txt")
+    if not os.path.exists(req_file):
+        return []
+
+    if _tool_available("pip-audit"):
+        return _run_pip_audit(req_file)
+
+    if _tool_available("safety"):
+        return _run_safety(req_file)
+
+    return []
+
+
+# ---------------------------------------------------------------------------
+# Orchestrator
+# ---------------------------------------------------------------------------
 
 def scan(target_path: str) -> ScanResult:
     result = ScanResult()
