@@ -143,46 +143,38 @@ def run_pylint(target_path: str) -> Tuple[List[Finding], Optional[float]]:
     if not _tool_available("pylint"):
         return findings, score
 
-    # --score=yes appends the score line to stderr in pylint 3.x when using JSON format
-    _, stdout, stderr = _run([
+    # json2 format (pylint >= 2.13) returns score + messages in one JSON object
+    _, stdout, _ = _run([
         "pylint", target_path,
-        "--output-format=json",
+        "--output-format=json2",
         "--score=yes",
         "--ignore=.venv,node_modules",
     ])
 
-    # Extract score from either stream
-    for stream in (stdout, stderr):
-        m = re.search(r"rated at ([\d.]+)/10", stream)
-        if m:
-            score = float(m.group(1))
-            break
+    try:
+        data = json.loads(stdout)
+        score = data.get("statistics", {}).get("score")
 
-    # Parse JSON messages from stdout
-    json_match = re.search(r"(\[.*\])", stdout, re.DOTALL)
-    if json_match:
-        try:
-            msgs = json.loads(json_match.group(1))
-            severity_map = {
-                "fatal": "CRITICAL",
-                "error": "HIGH",
-                "warning": "MEDIUM",
-                "refactor": "LOW",
-                "convention": "LOW",
-                "info": "INFO",
-            }
-            for msg in msgs:
-                findings.append(Finding(
-                    scanner="pylint",
-                    rule_id=msg.get("message-id", ""),
-                    severity=severity_map.get(msg.get("type", "convention"), "LOW"),
-                    title=msg.get("symbol", ""),
-                    file_path=_normalize_path(msg.get("path", "")),
-                    line=msg.get("line", 0),
-                    message=msg.get("message", ""),
-                ))
-        except (json.JSONDecodeError, TypeError):
-            pass
+        severity_map = {
+            "fatal": "CRITICAL",
+            "error": "HIGH",
+            "warning": "MEDIUM",
+            "refactor": "LOW",
+            "convention": "LOW",
+            "info": "INFO",
+        }
+        for msg in data.get("messages", []):
+            findings.append(Finding(
+                scanner="pylint",
+                rule_id=msg.get("message-id", ""),
+                severity=severity_map.get(msg.get("type", "convention"), "LOW"),
+                title=msg.get("symbol", ""),
+                file_path=_normalize_path(msg.get("path", "")),
+                line=msg.get("line", 0),
+                message=msg.get("message", ""),
+            ))
+    except (json.JSONDecodeError, TypeError, KeyError):
+        pass
 
     return findings, score
 
@@ -255,7 +247,7 @@ def run_jscpd(target_path: str) -> Optional[float]:
 
 def _run_pip_audit(req_file: str) -> List[Finding]:
     findings: List[Finding] = []
-    _, stdout, _ = _run(["pip-audit", "-r", req_file, "-f", "json", "--no-progress"])
+    _, stdout, _ = _run(["pip-audit", "-r", req_file, "-f", "json", "--progress-spinner", "off"])
     if not stdout.strip():
         return findings
     try:

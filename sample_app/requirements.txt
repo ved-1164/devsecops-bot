@@ -2,4 +2,4 @@
 # These are INTENTIONALLY OUTDATED packages used to demo CVE detection.
 # DO NOT use these versions in production.
 requests==2.18.0
-Pillow==9.0.0
+pyyaml==5.3.1
