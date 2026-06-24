@@ -47,8 +47,18 @@ def run_pr_scan() -> None:
         f"Failures: {result.failure_count}"
     )
 
-    if result.has_failures:
-        sys.exit(1)
+    import json as _json
+    report = {
+        "warnings": result.warning_count,
+        "failures": result.failure_count,
+        "high_severity_count": len([f for f in result.bandit_findings if f.severity in ("HIGH", "CRITICAL")]),
+        "cve_count": len(result.cve_findings),
+        "coverage_pct": result.coverage_pct,
+        "blocked": result.has_failures,
+    }
+    with open("scan-report.json", "w") as _f:
+        _json.dump(report, _f, indent=2)
+    print("==> Scan report written to scan-report.json")
 
 
 def run_nightly_cve() -> None:

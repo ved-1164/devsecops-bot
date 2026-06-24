@@ -19,7 +19,6 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
-          # Use a PAT so git push from the bot is allowed
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Python 3.11
@@ -47,3 +46,35 @@ jobs:
           COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
           GITHUB_HEAD_REF: ${{ github.head_ref }}
         run: python -m bot.main scan
+
+      - name: Upload scan report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scan-report
+          path: scan-report.json
+
+      - name: Enforce security gate
+        if: always()
+        run: |
+          python - << 'PYEOF'
+          import json, sys
+          try:
+              with open("scan-report.json") as f:
+                  report = json.load(f)
+          except FileNotFoundError:
+              print("scan-report.json not found — scan step may have failed")
+              sys.exit(1)
+
+          print(f"Warnings : {report['warnings']}")
+          print(f"Failures : {report['failures']}")
+          print(f"HIGH/CRIT: {report['high_severity_count']}")
+          print(f"CVEs     : {report['cve_count']}")
+          print(f"Coverage : {report.get('coverage_pct', 'N/A')}%")
+
+          if report["blocked"]:
+              print("\nSECURITY GATE: FAILED — fix HIGH severity issues before merging")
+              sys.exit(1)
+          else:
+              print("\nSECURITY GATE: PASSED")
+          PYEOF
