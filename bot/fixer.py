@@ -9,22 +9,32 @@ def _run(cmd: List[str], cwd: str = ".") -> Tuple[int, str, str]:
 
 def fix_formatting(target_path: str) -> bool:
     """Run black to reformat Python files in-place."""
-    rc, _, _ = _run(["black", target_path, "--quiet",
-                      "--exclude", r"\.venv|node_modules|__pycache__"])
+    rc, _, _ = _run(
+        [
+            "black",
+            target_path,
+            "--quiet",
+            "--exclude",
+            r"\.venv|node_modules|__pycache__",
+        ]
+    )
     return rc == 0
 
 
 def fix_imports(target_path: str) -> bool:
     """Remove unused imports and variables with autoflake."""
-    rc, _, _ = _run([
-        "autoflake",
-        "--in-place",
-        "--recursive",
-        "--remove-unused-variables",
-        "--remove-all-unused-imports",
-        "--exclude", ".venv,node_modules,__pycache__",
-        target_path,
-    ])
+    rc, _, _ = _run(
+        [
+            "autoflake",
+            "--in-place",
+            "--recursive",
+            "--remove-unused-variables",
+            "--remove-all-unused-imports",
+            "--exclude",
+            ".venv,node_modules,__pycache__",
+            target_path,
+        ]
+    )
     return rc == 0
 
 

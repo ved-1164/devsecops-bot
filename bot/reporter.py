@@ -25,7 +25,9 @@ def format_comment(
     lines.append("### Security (bandit)")
     if result.bandit_findings:
         high = [f for f in result.bandit_findings if f.severity in ("HIGH", "CRITICAL")]
-        others = [f for f in result.bandit_findings if f.severity not in ("HIGH", "CRITICAL")]
+        others = [
+            f for f in result.bandit_findings if f.severity not in ("HIGH", "CRITICAL")
+        ]
         for f in high:
             loc = f" -- {f.file_path}:{f.line}" if f.file_path else ""
             lines.append(f"- [ ] {f.rule_id} {f.message}{loc}")
@@ -46,7 +48,9 @@ def format_comment(
             loc = f" -- {f.file_path}:{f.line}" if f.file_path else ""
             lines.append(f"- [ ] {f.rule_id} {f.title}{loc}")
         if len(result.flake8_findings) > cap:
-            lines.append(f"- [ ] ...and {len(result.flake8_findings) - cap} more flake8 issues")
+            lines.append(
+                f"- [ ] ...and {len(result.flake8_findings) - cap} more flake8 issues"
+            )
     else:
         lines.append("- [x] No flake8 issues")
 
@@ -81,6 +85,8 @@ def format_comment(
         lines.append("### Dependencies: No CVEs")
 
     lines.append("")
-    lines.append(f"**Overall: Warnings {result.warning_count} | Failures {result.failure_count}**")
+    lines.append(
+        f"**Overall: Warnings {result.warning_count} | Failures {result.failure_count}**"
+    )
 
     return "\n".join(lines)
