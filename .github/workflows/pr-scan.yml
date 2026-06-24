@@ -1,0 +1,49 @@
+name: DevSecOps Bot — PR Scan
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  pull-requests: write   # post comments
+  contents: write        # commit auto-fixes back to branch
+
+jobs:
+  devsecops-scan:
+    name: Security, Quality & CVE Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+          # Use a PAT so git push from the bot is allowed
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install bot dependencies
+        run: pip install -r requirements.txt
+
+      - name: Set up Node.js (for jscpd)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install jscpd
+        run: npm install -g jscpd
+
+      - name: Run DevSecOps Bot
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO_NAME: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
+          GITHUB_HEAD_REF: ${{ github.head_ref }}
+        run: python -m bot.main scan

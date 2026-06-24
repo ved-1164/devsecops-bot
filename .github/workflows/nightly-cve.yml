@@ -1,0 +1,36 @@
+name: DevSecOps Bot — Nightly CVE Scan
+
+on:
+  schedule:
+    - cron: "0 2 * * *"   # 02:00 UTC every day
+  workflow_dispatch:        # allow manual trigger
+
+permissions:
+  pull-requests: write
+  contents: write
+
+jobs:
+  nightly-cve:
+    name: Nightly Dependency CVE Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install bot dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run nightly CVE scan
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO_NAME: ${{ github.repository }}
+        run: python -m bot.main nightly-cve

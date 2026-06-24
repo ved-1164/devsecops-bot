@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.env
+coverage.json
+.coverage
+.jscpd-report/
+node_modules/
+dist/
+build/
+*.egg-info/
